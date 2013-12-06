@@ -1,0 +1,228 @@
+package stormgate.editor.tool;
+
+import java.awt.Color;
+import java.awt.Graphics;
+import java.awt.Rectangle;
+import java.awt.event.KeyEvent;
+import java.awt.event.MouseEvent;
+import stormgate.action.entity.EntityDeleteAction;
+import stormgate.action.entity.EntityPasteAction;
+import stormgate.data.MapEntity;
+import stormgate.editor.data.EditorData;
+import stormgate.editor.tool.data.EntityToolMode;
+import stormgate.editor.tool.data.EntityToolPlaceMode;
+import stormgate.editor.tool.data.EntityToolSelectMode;
+import stormgate.editor.tool.panel.EntityToolPanel;
+import stormgate.editor.tool.panel.ToolPanel;
+import stormgate.geom.MapPoint;
+import stormgate.image.LibraryResource;
+
+/**
+ *
+ * @author David
+ */
+public class EntityTool extends Tool
+{
+	int mouseX = 0;
+	int mouseY = 0;
+
+	private EntityToolPanel panel;
+	private MapEntity[] selectedEntities;
+	private MapEntity[] clipboard;
+	private EntityToolMode mode;
+
+	public EntityTool(EditorData data)
+	{
+		super(data);
+
+		mode = new EntityToolSelectMode(this);
+		mode.setData(data);
+
+		panel = new EntityToolPanel();
+    panel.setEntityTool(this);
+	}
+
+	@Override
+	public ToolPanel getPanel()
+	{
+		return panel;
+	}
+
+	@Override
+	public void selectGraphic(String resource)
+	{
+	}
+
+	public void paint(Graphics g)
+	{
+		if (selectedEntities != null) {
+			g.setColor(Color.GREEN);
+
+			for (int i = 0; i < selectedEntities.length; i++) {
+				//Draw graphic boundaries
+				MapEntity mapGraphic = selectedEntities[i];
+				MapPoint graphicPoint = mapGraphic.getPoint();
+				LibraryResource resource = data.getManager().getResource(mapGraphic.getURL());
+				if (resource != null) {
+					Rectangle bounds = resource.getBoundary();
+					int gX = graphicPoint.getX();
+					int gY = graphicPoint.getY();
+					int rectX1 = bounds.x + gX;
+					int rectY1 = bounds.y + gY;
+					int rectX2 = zoomFilter(bounds.width);
+					int rectY2 = zoomFilter(bounds.height);
+
+					MapPoint A = new MapPoint(rectX1, rectY1);
+
+					MapPoint screenPointA = data.convertToWorkspace(A);
+
+					g.drawRect(screenPointA.getX(), screenPointA.getY(), rectX2, rectY2);
+				}
+			}
+		}
+
+		//Paint Tool
+		if (mode != null) {
+			mode.paint(g);
+		}
+	}
+
+	public int zoomFilter(float a)
+	{
+		return Math.round(a * filter.getZoom());
+	}
+
+	//Controls
+	public void mousePressed(MouseEvent e)
+	{
+		if (mode != null) {
+			mode.mousePressed(e);
+		}
+		data.refresh();
+	}
+
+	public void mouseReleased(MouseEvent e)
+	{
+		if (mode != null) {
+			mode.mouseReleased(e);
+		}
+		data.refresh();
+	}
+
+	public void mouseDragged(MouseEvent e)
+	{
+		mouseMoved(e);
+	}
+
+	public void mouseMoved(MouseEvent e)
+	{
+		if (mode != null) {
+			mode.mouseMoved(e);
+		}
+
+		mouseX = e.getX();
+		mouseY = e.getY();
+
+		data.refresh();
+	}
+
+	public void selectMode()
+	{
+		mode = new EntityToolSelectMode(this);
+		mode.setData(data);
+	}
+
+	public MapEntity[] getSelectedEntities()
+	{
+		return selectedEntities;
+	}
+
+	public void setSelectedEntities(MapEntity[] selectedEntities)
+	{
+		this.selectedEntities = selectedEntities;
+    update();
+	}
+
+	public void keyPressed(KeyEvent e)
+	{
+		int keyCode = e.getKeyCode();
+		//Delete Key
+		if (keyCode == 127) {
+			//DELETE
+			EntityDeleteAction d = new EntityDeleteAction(data.getMap(), this);
+			data.performAction(d);
+		}
+
+		if (keyCode == 27) {
+			selectMode();
+		}
+	}
+
+	public void doubleClickGraphic(String resource)
+	{
+	}
+
+	public void cut()
+	{
+		copy();
+
+		//DELETE
+		EntityDeleteAction d = new EntityDeleteAction(data.getMap(), this);
+		data.performAction(d);
+	}
+
+	public void copy()
+	{
+		clipboard = selectedEntities;
+	}
+
+	public void paste()
+	{
+		//PLACE GRAPHICS
+
+		MapPoint pasteLocation = data.convertToMap(mouseX, mouseY);
+
+		int top = -1;
+		int left = -1;
+
+		for(int i = 0 ; i < clipboard.length; i++){
+			MapEntity graphic = clipboard[i];
+			if(graphic != null){
+				MapPoint graphicPoint = graphic.getPoint();
+				if(graphicPoint.getX() < left || left == -1){
+					left = graphicPoint.getX();
+				}
+				if(graphicPoint.getY() < top || top == -1){
+					top = graphicPoint.getY();
+				}
+			}
+		}
+
+		MapPoint offset = new MapPoint(left, top);
+		if (data.snap()) {
+			//c = data.getClosestGrid(c);
+
+			pasteLocation = data.getClosestGrid(pasteLocation);
+		}
+
+		EntityPasteAction p = new EntityPasteAction(data.getMap(), this, clipboard, pasteLocation, offset);
+		data.performAction(p);
+	}
+
+	public String getSelected()
+	{
+		return selected;
+	}
+
+	public void update()
+	{
+		panel.updatePanel();
+	}
+
+  public void setEntity(MapEntity entity) {
+		EntityToolPlaceMode place = new EntityToolPlaceMode(this);
+    place.setEntity(entity);
+    mode = place;
+		mode.setData(data);
+  }
+}
